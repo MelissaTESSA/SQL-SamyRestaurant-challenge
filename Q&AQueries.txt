@@ -1,0 +1,162 @@
+/*    The total amount each customer spent at the restaurant    */
+
+SELECT s.customer_id,
+       SUM(m.price) AS total_amount
+FROM sales AS s
+JOIN menu AS m
+ON s.product_id=m.product_id
+GROUP BY s.customer_id
+ORDER BY total_amount DESC;
+
+/*    The number of days each cutomer visited the restaurant    */
+SELECT customer_id,
+       COUNT(DISTINCT order_date) AS numbers_visit
+FROM   sales
+GROUP BY customer_id
+ORDER BY numbers_visit DESC;
+
+/*    The first item from the menu purchased by each customer    */
+
+WITH first_order AS    --    Use CTE
+(
+    SELECT s.customer_id,
+           m.product_name,
+           ROW_NUMBER() OVER 
+            (
+            PARTITION BY s.customer_id
+             ORDER BY s.order_date ASC
+            )AS rn
+    FROM sales AS s
+    JOIN menu AS m
+    ON s.product_id=m.product_id
+)
+
+SELECT customer_id,
+       product_name
+FROM first_order 
+WHERE rn=1; 
+
+/*    the most purchased item on the menu and how many times was it purchased by all customers    */
+
+SELECT m.product_name,
+       COUNT(s.order_date) AS total_order
+FROM sales AS s
+JOIN menu AS m
+ON s.product_id=m.product_id
+GROUP BY s.product_id
+ORDER BY total_order DESC
+LIMIT 1;
+
+/*    The most popular item for each customer    */
+
+WITH popular_item AS
+(
+SELECT s.customer_id,
+       m.product_name,
+       RANK() OVER(
+       PARTITION BY customer_id 
+       ORDER BY COUNT(s.product_id) DESC   
+       ) AS rnK
+FROM sales AS s
+JOIN menu AS m
+ON s.product_id=m.product_id
+GROUP BY s.product_id,s.customer_id
+)
+SELECT *
+FROM popular_item
+where rnK=1
+;
+
+/*    The item that was purchased first by the customer after they became a member    */
+
+WITH first_order AS    --    Use CTE
+(
+    SELECT s.customer_id,
+           m.product_name,
+           RANK() OVER 
+            (
+            PARTITION BY s.customer_id
+             ORDER BY s.order_date ASC
+            )AS rn
+    FROM sales AS s
+    JOIN menu AS m
+    ON s.product_id=m.product_id
+    LEFT JOIN members AS e
+    ON e.customer_id=s.customer_id
+    WHERE e.join_date<=s.order_date
+)
+
+SELECT customer_id,
+       product_name
+FROM first_order 
+WHERE rn=1;
+
+/*    The item that was purchased just before the customer after they became a member    */ 
+WITH first_order AS    --    Use CTE
+(
+    SELECT s.customer_id,
+           m.product_name,
+           RANK() OVER 
+            (
+            PARTITION BY s.customer_id
+             ORDER BY s.order_date DESC
+            )AS rn
+    FROM sales AS s
+    JOIN menu AS m
+    ON s.product_id=m.product_id
+    LEFT JOIN members AS e
+    ON e.customer_id=s.customer_id
+    WHERE e.join_date>s.order_date
+)
+
+SELECT customer_id,
+       product_name
+FROM first_order 
+WHERE rn=1;
+
+/*    total items and amount spent for each member before they became a member    */
+SELECT s.customer_id,
+       SUM(m.price),
+       COUNT(s.product_id)
+FROM sales AS s
+JOIN menu AS m
+ON s.product_id=m.product_id
+JOIN members AS e
+ON e.customer_id=s.customer_id
+WHERE e.join_date>s.order_date
+GROUP BY s.customer_id;
+
+/*    If each $1 spent equates to 10 points and sushi has a 2x points multiplier, the number of points would each customer have    */
+SELECT s.customer_id,
+       SUM(
+       CASE
+           WHEN m.product_name='sushi' THEN (m.price*20)
+           ELSE (m.price*10)
+       END
+          ) AS nb_points
+FROM sales AS s
+JOIN menu AS m
+ON s.product_id=m.product_id
+
+GROUP BY s.customer_id;
+
+
+/*   In the first week after a customer joins the program (including their join date) they earn 2x points on all items, not just sushi - The number of points customer A and B have at the end of January   */
+SELECT s.customer_id,
+       SUM(
+       CASE
+           WHEN (e.join_date+7)>=s.order_date THEN (m.price*20) 
+           WHEN (e.join_date+7)<s.order_date THEN
+           CASE
+               WHEN m.product_name='sushi' THEN (m.price*20)
+               ELSE (m.price*10) 
+           END
+       END
+        ) AS nb_points
+FROM sales AS s
+JOIN menu AS m
+ON s.product_id=m.product_id
+JOIN members AS e
+ON s.customer_id=e.customer_id
+WHERE s.order_date <= '2021-01-31'
+GROUP BY s.customer_id;
